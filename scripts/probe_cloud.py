@@ -34,13 +34,15 @@ VL_TOTAL_BUDGET_MS = 3000.0    # 每词识别 1.5–3s 的经验上限
 TTS_BUDGET_MS = 300.0          # L2/L5 的关键（流式首包目标；run_tts 为整段返回，见报告注释）
 ASR_BUDGET_MS = 2000.0         # 一句话识别经验上限
 
-#: 1×1 白色 JPEG（仅用于 VL 连通性/延迟探测，不用于准确率评估）
+#: 16×16 白色标准 JPEG（仅用于 VL 连通性/延迟探测，不用于准确率评估）
 _TINY_JPEG_B64 = (
-    "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////"
-    "////////////////////////////////////////2wBDAf//////////////////////////////////"
-    "////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFAABAAAAAAAAAAAA"
-    "AAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAUAQEAAAAAAAAAAAAAAAAAAAAA/8QAFBEB"
-    "AAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AvwA//9k="
+    "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2P/"
+    "2wBDARESEhgVGC8aGi9jQjhCY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2P/wAARCAAQABADASIAAhEBAxEB/"
+    "8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2Jy"
+    "ggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLD"
+    "xMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3"
+    "AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6"
+    "goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD0CiiigD//2Q=="
 )
 
 PROBE_TEXT = "医生，我头疼两天了。"
@@ -92,6 +94,11 @@ def _maas_client():
     )
 
 
+def _maas_extra_body() -> dict | None:
+    disable = os.getenv("MAAS_DISABLE_THINKING", "1").strip().lower() in {"1", "true", "yes", "on"}
+    return {"thinking": {"type": "disabled"}} if disable else None
+
+
 async def probe_llm(runs: int) -> dict:
     """MaaS 文本模型结构化 CoT：TTFT / 总耗时。"""
     try:
@@ -113,9 +120,17 @@ async def probe_llm(runs: int) -> dict:
         ttft = None
         text_parts: list[str] = []
         try:
-            stream = await client.chat.completions.create(
-                model=model, messages=messages, temperature=0.1, max_tokens=200, stream=True,
-            )
+            kwargs = {
+                "model": model,
+                "messages": messages,
+                "temperature": 0.1,
+                "max_tokens": 200,
+                "stream": True,
+            }
+            extra_body = _maas_extra_body()
+            if extra_body:
+                kwargs["extra_body"] = extra_body
+            stream = await client.chat.completions.create(**kwargs)
             async for chunk in stream:
                 delta = chunk.choices[0].delta.content if chunk.choices else None
                 if delta:
@@ -166,9 +181,17 @@ async def probe_vision(runs: int) -> dict:
         started = time.perf_counter()
         ttft = None
         try:
-            stream = await client.chat.completions.create(
-                model=model, messages=messages, temperature=0.1, max_tokens=80, stream=True,
-            )
+            kwargs = {
+                "model": model,
+                "messages": messages,
+                "temperature": 0.1,
+                "max_tokens": 120,
+                "stream": True,
+            }
+            extra_body = _maas_extra_body()
+            if extra_body:
+                kwargs["extra_body"] = extra_body
+            stream = await client.chat.completions.create(**kwargs)
             async for chunk in stream:
                 delta = chunk.choices[0].delta.content if chunk.choices else None
                 if delta and ttft is None:

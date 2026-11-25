@@ -35,6 +35,12 @@ class Settings:
         self.maas_api_key = os.getenv("MAAS_API_KEY", "").strip()
         self.maas_vl_model = os.getenv("MAAS_VL_MODEL", "qwen2.5-vl-72b").strip()
         self.maas_llm_model = os.getenv("MAAS_LLM_MODEL", "deepseek-v3").strip()
+        self.maas_disable_thinking = os.getenv("MAAS_DISABLE_THINKING", "1").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
 
         self.hw_ak = os.getenv("HW_AK", "").strip()
         self.hw_sk = os.getenv("HW_SK", "").strip()
@@ -87,6 +93,9 @@ class Settings:
             "llm": self.llm_ready,
             "sis": self.sis_ready,
         }.get(service, False)
+
+    def maas_extra_body(self) -> dict | None:
+        return {"thinking": {"type": "disabled"}} if self.maas_disable_thinking else None
 
     def describe(self) -> dict:
         return {

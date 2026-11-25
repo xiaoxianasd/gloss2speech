@@ -297,13 +297,17 @@ class LLMService:
 
         prompt = build_compose_prompt(words, scene_name, history)
         client = self._get_client()
-        stream = await client.chat.completions.create(
-            model=settings.maas_llm_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_tokens=300,
-            stream=True,
-        )
+        kwargs: dict[str, Any] = {
+            "model": settings.maas_llm_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.1,
+            "max_tokens": 300,
+            "stream": True,
+        }
+        extra_body = settings.maas_extra_body()
+        if extra_body:
+            kwargs["extra_body"] = extra_body
+        stream = await client.chat.completions.create(**kwargs)
         streamer = _DualModeSentenceStreamer()
         raw_parts: list[str] = []
         async for chunk in stream:
@@ -361,12 +365,16 @@ class LLMService:
 
         prompt = build_quick_reply_prompt(text, scene_name)
         client = self._get_client()
-        resp = await client.chat.completions.create(
-            model=settings.maas_llm_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=120,
-        )
+        kwargs: dict[str, Any] = {
+            "model": settings.maas_llm_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.3,
+            "max_tokens": 160,
+        }
+        extra_body = settings.maas_extra_body()
+        if extra_body:
+            kwargs["extra_body"] = extra_body
+        resp = await client.chat.completions.create(**kwargs)
         raw = resp.choices[0].message.content or ""
         start = raw.find("[")
         end = raw.rfind("]")

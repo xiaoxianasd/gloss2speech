@@ -37,7 +37,7 @@ if not exist "%ROOT%\frontend\node_modules" (
 )
 
 echo [START] Launching Backend (http://127.0.0.1:8000)...
-start "SignBridge Backend (8000)" /D "%ROOT%" cmd /k "chcp 65001 >nul && set PYTHONUTF8=1 && python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload"
+start "SignBridge Backend (8000)" /D "%ROOT%" cmd /k "chcp 65001 >nul && python -X utf8 -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload"
 
 echo [START] Launching Frontend (http://127.0.0.1:5173)...
 start "SignBridge Frontend (5173)" /D "%ROOT%\frontend" cmd /k "chcp 65001 >nul && npm run dev"

@@ -37,9 +37,9 @@ class VisionService:
 
     async def _call_vl(self, prompt: str, image_base64: str) -> str:
         client = self._get_client()
-        resp = await client.chat.completions.create(
-            model=settings.maas_vl_model,
-            messages=[
+        kwargs: dict[str, Any] = {
+            "model": settings.maas_vl_model,
+            "messages": [
                 {
                     "role": "user",
                     "content": [
@@ -51,9 +51,13 @@ class VisionService:
                     ],
                 }
             ],
-            temperature=0.1,
-            max_tokens=200,
-        )
+            "temperature": 0.1,
+            "max_tokens": 256,
+        }
+        extra_body = settings.maas_extra_body()
+        if extra_body:
+            kwargs["extra_body"] = extra_body
+        resp = await client.chat.completions.create(**kwargs)
         return resp.choices[0].message.content or ""
 
     # ---------- 解析与词表校验 ----------
