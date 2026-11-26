@@ -7,22 +7,26 @@
       </div>
       <div class="header-right">
         <el-tag :type="serviceTagType" effect="dark" size="small" class="service-tag" @click="promptForToken">{{ serviceText }}</el-tag>
+        <el-button size="small" plain class="token-btn" @click="promptForToken">{{ tokenSaved ? "口令 ✓" : "口令" }}</el-button>
       </div>
     </header>
     <main class="app-main">
-      <Translate />
+      <Translate :initial-scenes="scenes" scenes-managed />
     </main>
   </div>
 </template>
 
 <script setup>
-import { onMounted, ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import Translate from "./views/Translate.vue";
 import { api } from "./api";
 
 const serviceText = ref("检查后端中…");
 const serviceTagType = ref("info");
+const tokenSaved = ref(api.hasToken());
+const scenes = ref([]);
+let pendingPrompt = null;
 
 async function checkHealth() {
   try {
@@ -38,34 +42,63 @@ async function checkHealth() {
   }
 }
 
-async function promptForToken() {
+async function refreshConnection() {
   try {
-    const result = await ElMessageBox.prompt(
-      "后端已开启访问口令（API_TOKEN），请输入后重试：",
-      "需要访问口令",
-      { confirmButtonText: "确定", cancelButtonText: "取消", inputType: "password" },
-    );
-    const token = (result.value || "").trim();
-    if (!token) return;
-    api.setToken(token);
-    ElMessage.success("口令已保存到本机，正在重新连接…");
-    window.location.reload();
-  } catch (error) {
-    /* 用户取消 */
-  }
-}
-
-onMounted(async () => {
-  try {
-    await api.getScenes();
+    const data = await api.getScenes();
+    scenes.value = Array.isArray(data) ? data : (data && data.scenes) || [];
   } catch (error) {
     if (error && error.status === 401) {
       serviceText.value = "需要访问口令（点此输入）";
       serviceTagType.value = "danger";
-      await promptForToken();
-      return;
+      return false;
     }
   }
-  await checkHealth();
+  return checkHealth();
+}
+
+function promptForToken() {
+  if (pendingPrompt) return pendingPrompt;
+  pendingPrompt = (async () => {
+    try {
+      const result = await ElMessageBox.prompt(
+        "请输入后端访问口令（API_TOKEN，留空确定可清除已保存口令）：",
+        "访问口令设置",
+        {
+          confirmButtonText: "保存",
+          cancelButtonText: "取消",
+          inputType: "password",
+          inputValue: api.getToken(),
+          inputPlaceholder: "输入口令或留空清除",
+        },
+      );
+      const token = (result.value || "").trim();
+      api.setToken(token);
+      tokenSaved.value = api.hasToken();
+      if (token) {
+        ElMessage.success("口令已保存到本机，正在重新连接…");
+      } else {
+        ElMessage.info("已清除本机保存的访问口令");
+      }
+      await refreshConnection();
+    } catch (error) {
+      /* 用户取消 */
+    } finally {
+      pendingPrompt = null;
+    }
+  })();
+  return pendingPrompt;
+}
+
+onMounted(async () => {
+  api.onUnauthorized(() => {
+    serviceText.value = "需要访问口令（点此输入）";
+    serviceTagType.value = "danger";
+    return promptForToken();
+  });
+  await refreshConnection();
+});
+
+onUnmounted(() => {
+  api.onUnauthorized(null);
 });
 </script>

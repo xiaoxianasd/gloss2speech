@@ -4,6 +4,7 @@
  *   - 优先 GPU delegate，失败自动回退 CPU，再失败进入 fallback 模式不阻塞主链路
  */
 import { computeHandBox } from "./roi";
+import { packHandLandmarks } from "./signCore";
 
 const HAND_EDGES = [
   [0, 1], [1, 2], [2, 3], [3, 4],
@@ -14,16 +15,33 @@ const HAND_EDGES = [
   [0, 17],
 ];
 
+const EMPTY_RESULT = Object.freeze({
+  hasHands: false,
+  landmarks: [],
+  handednesses: [],
+  handBox: null,
+  packed: null,
+  updated: false,
+});
+
 export class HandTracker {
-  constructor() {
+  constructor(options = {}) {
     this.status = "idle";
     this.delegate = "";
     this.error = "";
-    this.lastResult = { hasHands: false, landmarks: [], handBox: null };
+    this.lastResult = { ...EMPTY_RESULT };
     this._hands = null;
     this._initPromise = null;
     this._lastVideoTime = -1;
     this._lastTs = 0;
+    this._minIntervalMs = Number.isFinite(options.minIntervalMs) ? options.minIntervalMs : 66;
+    this._lastDetectAt = 0;
+  }
+
+  setMinInterval(ms) {
+    if (Number.isFinite(ms) && ms >= 0) {
+      this._minIntervalMs = ms;
+    }
   }
 
   async init() {
@@ -73,12 +91,16 @@ export class HandTracker {
 
   detect(video, now) {
     if (this.status !== "ready" || !this._hands || !video || video.readyState < 2 || !video.videoWidth) {
-      return this.lastResult;
+      return { ...this.lastResult, updated: false };
     }
     if (video.currentTime === this._lastVideoTime) {
-      return this.lastResult;
+      return { ...this.lastResult, updated: false };
+    }
+    if (this._minIntervalMs > 0 && now - this._lastDetectAt < this._minIntervalMs) {
+      return { ...this.lastResult, updated: false };
     }
     this._lastVideoTime = video.currentTime;
+    this._lastDetectAt = now;
 
     const ts = Math.max(Math.floor(now), this._lastTs + 1);
     this._lastTs = ts;
@@ -86,14 +108,20 @@ export class HandTracker {
     try {
       const res = this._hands.detectForVideo(video, ts);
       const landmarks = (res && res.landmarks) || [];
+      const handednesses = (res && (res.handedness || res.handednesses)) || [];
       const handBox = computeHandBox(landmarks);
+      const hasHands = landmarks.length > 0;
+      const packed = hasHands ? packHandLandmarks(landmarks, handednesses) : null;
       this.lastResult = {
-        hasHands: landmarks.length > 0,
+        hasHands,
         landmarks,
+        handednesses,
         handBox,
+        packed,
+        updated: true,
       };
     } catch (err) {
-      this.lastResult = { hasHands: false, landmarks: [], handBox: null };
+      this.lastResult = { ...EMPTY_RESULT, updated: true };
     }
     return this.lastResult;
   }
@@ -159,6 +187,7 @@ export class HandTracker {
     this.status = "idle";
     this.delegate = "";
     this._initPromise = null;
-    this.lastResult = { hasHands: false, landmarks: [], handBox: null };
+    this.lastResult = { ...EMPTY_RESULT };
+    this._lastDetectAt = 0;
   }
 }

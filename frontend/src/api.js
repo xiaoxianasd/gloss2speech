@@ -33,6 +33,24 @@ function authHeaders(extra) {
   return headers;
 }
 
+let unauthorizedHandler = null;
+let unauthorizedNotifying = false;
+
+export function onUnauthorized(handler) {
+  unauthorizedHandler = typeof handler === "function" ? handler : null;
+}
+
+function notifyUnauthorized(error) {
+  if (!unauthorizedHandler || unauthorizedNotifying) return;
+  unauthorizedNotifying = true;
+  Promise.resolve()
+    .then(() => unauthorizedHandler(error))
+    .catch(() => {})
+    .finally(() => {
+      unauthorizedNotifying = false;
+    });
+}
+
 async function request(path, options) {
   const opts = Object.assign({}, options || {});
   opts.headers = authHeaders(opts.headers);
@@ -47,6 +65,9 @@ async function request(path, options) {
     }
     const error = new Error(detail);
     error.status = response.status;
+    if (response.status === 401) {
+      notifyUnauthorized(error);
+    }
     throw error;
   }
   return response.json();
@@ -64,6 +85,8 @@ export const api = {
   base: BASE,
   getToken,
   setToken,
+  hasToken: () => Boolean(getToken()),
+  onUnauthorized,
   health: () => request("/api/health"),
   getScenes: () => request("/api/scenes"),
 
@@ -86,6 +109,9 @@ export const api = {
         response.status === 401 ? "访问口令缺失或错误（401）" : "SSE 连接失败：" + response.status,
       );
       error.status = response.status;
+      if (response.status === 401) {
+        notifyUnauthorized(error);
+      }
       onError(error);
       return;
     }
